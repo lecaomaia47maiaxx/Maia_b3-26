@@ -5,7 +5,7 @@ import ta
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
-TOKEN = "8430351852:AAF50usp88gBEQ9XAlS98pOCVs8aBNztAqc"
+TOKEN = "8447556070:AAEk6TTSJWkdSkd6CtxGMtTTNr5kRcoBvjY"
 
 
 def analisar_ativo(ticker):
