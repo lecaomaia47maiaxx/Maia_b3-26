@@ -32,8 +32,8 @@ TOP_10_LIQUIDAS = [
     "WEGE3.SA",
     "ABEV3.SA",
     "RENT3.SA",
-    "MGLU3.SA",
-    "JBSS3.SA"
+    "JBSS3.SA",
+    "MGLU3.SA"
 ]
 
 INDICES = {
@@ -43,6 +43,9 @@ INDICES = {
     "💵 DÓLAR": "BRL=X",
     "📉 MINI ÍNDICE": "WIN=F"
 }
+
+# Controle de alertas para não repetir
+ultimos_sinais = {}
 
 # =========================
 # FUNÇÕES
@@ -79,7 +82,7 @@ def analisar_ativo(ticker):
         mm21 = df["MM21"].iloc[-1]
         rsi = df["RSI"].iloc[-1]
 
-        # SINAL
+        # Detectar cruzamento
         if mm9 > mm21 and df["MM9"].iloc[-2] <= df["MM21"].iloc[-2]:
             sinal = "🚀 CRUZAMENTO DE ALTA"
         elif mm9 < mm21 and df["MM9"].iloc[-2] >= df["MM21"].iloc[-2]:
@@ -107,7 +110,7 @@ def analisar_ativo(ticker):
 def enviar_relatorio_diario():
     mensagem = f"📊 RELATÓRIO COMPLETO B3\n{datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
 
-    mensagem += "🔎 ANÁLISE PRINCIPAL\n\n"
+    mensagem += "🔎 ATIVOS PRINCIPAIS\n\n"
 
     for ativo in ATIVOS_PRINCIPAIS:
         dados = analisar_ativo(ativo)
@@ -144,20 +147,26 @@ def enviar_relatorio_diario():
 
 
 # =========================
-# ALERTA INTRADAY
+# ALERTAS AUTOMÁTICOS
 # =========================
 
 def verificar_cruzamentos():
     for ativo in TOP_10_LIQUIDAS:
         dados = analisar_ativo(ativo)
         if dados and "CRUZAMENTO" in dados["sinal"]:
-            alerta = (
-                f"🚨 ALERTA DE MERCADO\n\n"
-                f"{dados['ticker']}\n"
-                f"Sinal: {dados['sinal']}\n"
-                f"Preço: R$ {dados['preco']:.2f}"
-            )
-            bot.send_message(chat_id=CHAT_ID, text=alerta)
+
+            # evitar repetição
+            if ultimos_sinais.get(ativo) != dados["sinal"]:
+                ultimos_sinais[ativo] = dados["sinal"]
+
+                alerta = (
+                    f"🚨 ALERTA DE MERCADO\n\n"
+                    f"{dados['ticker']}\n"
+                    f"Sinal: {dados['sinal']}\n"
+                    f"Preço: R$ {dados['preco']:.2f}"
+                )
+
+                bot.send_message(chat_id=CHAT_ID, text=alerta)
 
 
 # =========================
@@ -169,10 +178,10 @@ if __name__ == "__main__":
 
     scheduler = BlockingScheduler()
 
-    # Relatório diário 08:50
-    scheduler.add_job(enviar_relatorio_diario, "cron", hour=8, minute=50)
+    # 08:50 Brasil = 11:50 UTC
+    scheduler.add_job(enviar_relatorio_diario, "cron", hour=11, minute=50)
 
-    # Verificação a cada 15 minutos
+    # Verificação de cruzamentos a cada 15 minutos
     scheduler.add_job(verificar_cruzamentos, "interval", minutes=15)
 
     scheduler.start()
