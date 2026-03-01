@@ -3,140 +3,176 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from telegram import Bot
-from telegram.ext import Updater
+from apscheduler.schedulers.blocking import BlockingScheduler
 from datetime import datetime
 
 TOKEN = "8759794487:AAH9Roaz5gxMw7F5lXLJ7aL2DeXWmi5gQU8"
-CHAT_ID ="8352381582"
+CHAT_ID = "8352381582"
 
 bot = Bot(token=TOKEN)
 
-# ==============================
-# FUNÇÃO RSI
-# ==============================
+# =========================
+# CONFIGURAÇÕES
+# =========================
+
+ATIVOS_PRINCIPAIS = [
+    "PETR4.SA",
+    "VALE3.SA",
+    "ITUB4.SA",
+    "BBDC4.SA",
+    "BBAS3.SA"
+]
+
+TOP_10_LIQUIDAS = [
+    "PETR4.SA",
+    "VALE3.SA",
+    "ITUB4.SA",
+    "BBDC4.SA",
+    "BBAS3.SA",
+    "WEGE3.SA",
+    "ABEV3.SA",
+    "RENT3.SA",
+    "MGLU3.SA",
+    "JBSS3.SA"
+]
+
+INDICES = {
+    "🇧🇷 IBOVESPA": "^BVSP",
+    "🇺🇸 S&P500": "^GSPC",
+    "🇺🇸 NASDAQ": "^IXIC",
+    "💵 DÓLAR": "BRL=X",
+    "📉 MINI ÍNDICE": "WIN=F"
+}
+
+# =========================
+# FUNÇÕES
+# =========================
+
 def calcular_rsi(series, periodo=14):
     delta = series.diff()
     ganho = delta.clip(lower=0)
     perda = -delta.clip(upper=0)
 
-    media_ganho = ganho.rolling(window=periodo).mean()
-    media_perda = perda.rolling(window=periodo).mean()
+    media_ganho = ganho.rolling(periodo).mean()
+    media_perda = perda.rolling(periodo).mean()
 
     rs = media_ganho / media_perda
     rsi = 100 - (100 / (1 + rs))
-
     return rsi
 
 
-# ==============================
-# FUNÇÃO DE ANÁLISE
-# ==============================
 def analisar_ativo(ticker):
     try:
-        df = yf.download(ticker, period="3mo", interval="1d")
+        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
 
         if df.empty:
-            return f"{ticker} → Sem dados disponíveis"
+            return None
 
         close = df["Close"].squeeze()
 
-        df["RSI"] = calcular_rsi(close)
         df["MM9"] = close.rolling(9).mean()
         df["MM21"] = close.rolling(21).mean()
+        df["RSI"] = calcular_rsi(close)
 
         preco = close.iloc[-1]
-        rsi = df["RSI"].iloc[-1]
         mm9 = df["MM9"].iloc[-1]
         mm21 = df["MM21"].iloc[-1]
+        rsi = df["RSI"].iloc[-1]
 
-        # Classificação RSI
-        if rsi < 30:
-            status_rsi = "Sobrevendido"
-        elif rsi > 70:
-            status_rsi = "Sobrecomprado"
-        else:
-            status_rsi = "Neutro"
-
-        # Geração de sinal
-        if rsi < 30 and mm9 > mm21:
-            sinal = "🟢 FORTE COMPRA"
-        elif rsi > 70 and mm9 < mm21:
-            sinal = "🔴 FORTE VENDA"
+        # SINAL
+        if mm9 > mm21 and df["MM9"].iloc[-2] <= df["MM21"].iloc[-2]:
+            sinal = "🚀 CRUZAMENTO DE ALTA"
+        elif mm9 < mm21 and df["MM9"].iloc[-2] >= df["MM21"].iloc[-2]:
+            sinal = "⚠️ CRUZAMENTO DE BAIXA"
         elif mm9 > mm21:
-            sinal = "🟡 TENDÊNCIA DE ALTA"
-        elif mm9 < mm21:
-            sinal = "🟡 TENDÊNCIA DE BAIXA"
+            sinal = "🟢 Tendência de Alta"
         else:
-            sinal = "⚪ NEUTRO"
+            sinal = "🔴 Tendência de Baixa"
 
-        mensagem = (
-            f"📈 {ticker.replace('.SA','')}\n"
-            f"Preço: R$ {preco:.2f}\n"
-            f"RSI: {rsi:.2f} ({status_rsi})\n"
-            f"MM9: {mm9:.2f}\n"
-            f"MM21: {mm21:.2f}\n"
-            f"👉 SINAL: {sinal}\n"
-        )
+        return {
+            "ticker": ticker.replace(".SA", ""),
+            "preco": preco,
+            "rsi": rsi,
+            "sinal": sinal
+        }
 
-        return mensagem
-
-    except Exception as e:
-        return f"{ticker} → Erro: {str(e)}"
+    except:
+        return None
 
 
-# ==============================
-# MERCADO GLOBAL
-# ==============================
-def analisar_mercado_global():
-    indices = {
-        "🇺🇸 S&P 500": "^GSPC",
-        "🇺🇸 NASDAQ": "^IXIC",
-        "🇺🇸 DOW JONES": "^DJI",
-        "🇪🇺 EURO STOXX": "^STOXX50E",
-        "🇨🇳 SHANGHAI": "000001.SS"
-    }
+# =========================
+# RELATÓRIO DIÁRIO
+# =========================
 
-    resultado = "\n🌎 MERCADO GLOBAL\n\n"
+def enviar_relatorio_diario():
+    mensagem = f"📊 RELATÓRIO COMPLETO B3\n{datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
 
-    for nome, ticker in indices.items():
+    mensagem += "🔎 ANÁLISE PRINCIPAL\n\n"
+
+    for ativo in ATIVOS_PRINCIPAIS:
+        dados = analisar_ativo(ativo)
+        if dados:
+            mensagem += (
+                f"📈 {dados['ticker']}\n"
+                f"Preço: R$ {dados['preco']:.2f}\n"
+                f"RSI: {dados['rsi']:.2f}\n"
+                f"Sinal: {dados['sinal']}\n\n"
+            )
+
+    mensagem += "🏆 TOP 10 MAIS LÍQUIDAS\n\n"
+
+    for ativo in TOP_10_LIQUIDAS:
+        dados = analisar_ativo(ativo)
+        if dados:
+            mensagem += f"{dados['ticker']} → {dados['sinal']}\n"
+
+    mensagem += "\n🌎 MERCADO GLOBAL\n\n"
+
+    for nome, ticker in INDICES.items():
         try:
-            df = yf.download(ticker, period="5d", interval="1d")
+            df = yf.download(ticker, period="5d", interval="1d", progress=False)
             close = df["Close"].squeeze()
-
             variacao = ((close.iloc[-1] - close.iloc[-2]) / close.iloc[-2]) * 100
 
-            if variacao > 0:
-                tendencia = "🟢 Alta"
-            else:
-                tendencia = "🔴 Baixa"
+            status = "🟢 Alta" if variacao > 0 else "🔴 Baixa"
 
-            resultado += f"{nome}: {variacao:.2f}% ({tendencia})\n"
-
+            mensagem += f"{nome}: {variacao:.2f}% ({status})\n"
         except:
-            resultado += f"{nome}: erro\n"
-
-    return resultado
-
-
-# ==============================
-# RELATÓRIO COMPLETO
-# ==============================
-def enviar_relatorio():
-    ativos = ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "BBAS3.SA"]
-
-    mensagem = f"📊 RELATÓRIO B3\n{datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-
-    for ativo in ativos:
-        mensagem += analisar_ativo(ativo) + "\n"
-
-    mensagem += analisar_mercado_global()
+            mensagem += f"{nome}: erro\n"
 
     bot.send_message(chat_id=CHAT_ID, text=mensagem)
 
 
-# ==============================
-# EXECUÇÃO
-# ==============================
+# =========================
+# ALERTA INTRADAY
+# =========================
+
+def verificar_cruzamentos():
+    for ativo in TOP_10_LIQUIDAS:
+        dados = analisar_ativo(ativo)
+        if dados and "CRUZAMENTO" in dados["sinal"]:
+            alerta = (
+                f"🚨 ALERTA DE MERCADO\n\n"
+                f"{dados['ticker']}\n"
+                f"Sinal: {dados['sinal']}\n"
+                f"Preço: R$ {dados['preco']:.2f}"
+            )
+            bot.send_message(chat_id=CHAT_ID, text=alerta)
+
+
+# =========================
+# AGENDAMENTO
+# =========================
+
 if __name__ == "__main__":
-    print("Bot rodando...")
-    enviar_relatorio()
+    print("Bot profissional rodando...")
+
+    scheduler = BlockingScheduler()
+
+    # Relatório diário 08:50
+    scheduler.add_job(enviar_relatorio_diario, "cron", hour=8, minute=50)
+
+    # Verificação a cada 15 minutos
+    scheduler.add_job(verificar_cruzamentos, "interval", minutes=15)
+
+    scheduler.start()
