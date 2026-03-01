@@ -7,7 +7,7 @@ from telegram.ext import Updater
 from datetime import datetime
 
 TOKEN = "8759794487:AAH9Roaz5gxMw7F5lXLJ7aL2DeXWmi5gQU8"
-CHAT_ID ="8759794487"
+CHAT_ID ="8352381582"
 
 bot = Bot(token=TOKEN)
 
