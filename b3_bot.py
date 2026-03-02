@@ -1,19 +1,23 @@
 import os
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from telegram import Bot
 from apscheduler.schedulers.blocking import BlockingScheduler
 from datetime import datetime
-
-TOKEN = "8759794487:AAH9Roaz5gxMw7F5lXLJ7aL2DeXWmi5gQU8"
-CHAT_ID = "8352381582"
-
-bot = Bot(token=TOKEN)
+import pytz
 
 # =========================
 # CONFIGURAÇÕES
 # =========================
+
+TOKEN = "8759794487:AAH9Roaz5gxMw7F5lXLJ7aL2DeXWmi5gQU8"
+CHAT_ID = "8352381582"
+
+
+bot = Bot(token=TOKEN)
+
+timezone = pytz.utc
+scheduler = BlockingScheduler(timezone=timezone)
 
 ATIVOS_PRINCIPAIS = [
     "PETR4.SA",
@@ -44,35 +48,29 @@ INDICES = {
     "📉 MINI ÍNDICE": "WIN=F"
 }
 
-# Controle de alertas para não repetir
 ultimos_sinais = {}
 
 # =========================
-# FUNÇÕES
+# INDICADORES
 # =========================
 
 def calcular_rsi(series, periodo=14):
     delta = series.diff()
     ganho = delta.clip(lower=0)
     perda = -delta.clip(upper=0)
-
     media_ganho = ganho.rolling(periodo).mean()
     media_perda = perda.rolling(periodo).mean()
-
     rs = media_ganho / media_perda
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return 100 - (100 / (1 + rs))
 
 
 def analisar_ativo(ticker):
     try:
         df = yf.download(ticker, period="3mo", interval="1d", progress=False)
-
         if df.empty:
             return None
 
         close = df["Close"].squeeze()
-
         df["MM9"] = close.rolling(9).mean()
         df["MM21"] = close.rolling(21).mean()
         df["RSI"] = calcular_rsi(close)
@@ -82,7 +80,6 @@ def analisar_ativo(ticker):
         mm21 = df["MM21"].iloc[-1]
         rsi = df["RSI"].iloc[-1]
 
-        # Detectar cruzamento
         if mm9 > mm21 and df["MM9"].iloc[-2] <= df["MM21"].iloc[-2]:
             sinal = "🚀 CRUZAMENTO DE ALTA"
         elif mm9 < mm21 and df["MM9"].iloc[-2] >= df["MM21"].iloc[-2]:
@@ -94,22 +91,24 @@ def analisar_ativo(ticker):
 
         return {
             "ticker": ticker.replace(".SA", ""),
-            "preco": preco,
-            "rsi": rsi,
+            "preco": float(preco),
+            "rsi": float(rsi),
             "sinal": sinal
         }
 
-    except:
+    except Exception as e:
+        print(f"Erro ao analisar {ticker}: {e}")
         return None
 
 
 # =========================
-# RELATÓRIO DIÁRIO
+# RELATÓRIO DIÁRIO 08:50 BRASIL
 # =========================
 
 def enviar_relatorio_diario():
-    mensagem = f"📊 RELATÓRIO COMPLETO B3\n{datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    print("Enviando relatório diário...")
 
+    mensagem = f"📊 RELATÓRIO COMPLETO B3\n{datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
     mensagem += "🔎 ATIVOS PRINCIPAIS\n\n"
 
     for ativo in ATIVOS_PRINCIPAIS:
@@ -136,26 +135,25 @@ def enviar_relatorio_diario():
             df = yf.download(ticker, period="5d", interval="1d", progress=False)
             close = df["Close"].squeeze()
             variacao = ((close.iloc[-1] - close.iloc[-2]) / close.iloc[-2]) * 100
-
             status = "🟢 Alta" if variacao > 0 else "🔴 Baixa"
-
             mensagem += f"{nome}: {variacao:.2f}% ({status})\n"
-        except:
+        except Exception as e:
             mensagem += f"{nome}: erro\n"
 
     bot.send_message(chat_id=CHAT_ID, text=mensagem)
 
 
 # =========================
-# ALERTAS AUTOMÁTICOS
+# ALERTAS A CADA 15 MIN
 # =========================
 
 def verificar_cruzamentos():
+    print("Verificando cruzamentos...")
+
     for ativo in TOP_10_LIQUIDAS:
         dados = analisar_ativo(ativo)
-        if dados and "CRUZAMENTO" in dados["sinal"]:
 
-            # evitar repetição
+        if dados and "CRUZAMENTO" in dados["sinal"]:
             if ultimos_sinais.get(ativo) != dados["sinal"]:
                 ultimos_sinais[ativo] = dados["sinal"]
 
@@ -170,18 +168,16 @@ def verificar_cruzamentos():
 
 
 # =========================
-# AGENDAMENTO
+# INICIALIZAÇÃO
 # =========================
 
 if __name__ == "__main__":
     print("Bot profissional rodando...")
 
-    scheduler = BlockingScheduler()
-
     # 08:50 Brasil = 11:50 UTC
     scheduler.add_job(enviar_relatorio_diario, "cron", hour=11, minute=50)
 
-    # Verificação de cruzamentos a cada 15 minutos
+    # Cruzamentos a cada 15 minutos
     scheduler.add_job(verificar_cruzamentos, "interval", minutes=15)
 
     scheduler.start()
