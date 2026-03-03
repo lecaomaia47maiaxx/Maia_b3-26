@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 from telegram import Bot
 from apscheduler.schedulers.blocking import BlockingScheduler
-from datetime import datetime
+from datetime import datetime, time
 import pytz
 
 # =========================
@@ -13,30 +13,20 @@ import pytz
 TOKEN = "8759794487:AAH9Roaz5gxMw7F5lXLJ7aL2DeXWmi5gQU8"
 CHAT_ID = "8352381582"
 
-
 bot = Bot(token=TOKEN)
 
-timezone = pytz.utc
+timezone = pytz.timezone("America/Sao_Paulo")
 scheduler = BlockingScheduler(timezone=timezone)
 
 ATIVOS_PRINCIPAIS = [
-    "PETR4.SA",
-    "VALE3.SA",
-    "ITUB4.SA",
-    "BBDC4.SA",
-    "BBAS3.SA"
+    "PETR4.SA", "VALE3.SA", "ITUB4.SA",
+    "BBDC4.SA", "BBAS3.SA"
 ]
 
 TOP_10_LIQUIDAS = [
-    "PETR4.SA",
-    "VALE3.SA",
-    "ITUB4.SA",
-    "BBDC4.SA",
-    "BBAS3.SA",
-    "WEGE3.SA",
-    "ABEV3.SA",
-    "RENT3.SA",
-    "JBSS3.SA",
+    "PETR4.SA", "VALE3.SA", "ITUB4.SA",
+    "BBDC4.SA", "BBAS3.SA", "WEGE3.SA",
+    "ABEV3.SA", "RENT3.SA", "JBSS3.SA",
     "MGLU3.SA"
 ]
 
@@ -49,6 +39,7 @@ INDICES = {
 }
 
 ultimos_sinais = {}
+relatorio_enviado_hoje = False
 
 # =========================
 # INDICADORES
@@ -97,18 +88,23 @@ def analisar_ativo(ticker):
         }
 
     except Exception as e:
-        print(f"Erro ao analisar {ticker}: {e}")
+        print(f"Erro em {ticker}: {e}")
         return None
 
 
 # =========================
-# RELATÓRIO DIÁRIO 08:50 BRASIL
+# RELATÓRIO
 # =========================
 
 def enviar_relatorio_diario():
+    global relatorio_enviado_hoje
+
+    if relatorio_enviado_hoje:
+        return
+
     print("Enviando relatório diário...")
 
-    mensagem = f"📊 RELATÓRIO COMPLETO B3\n{datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    mensagem = f"📊 RELATÓRIO COMPLETO B3\n{datetime.now(timezone).strftime('%d/%m/%Y %H:%M')}\n\n"
     mensagem += "🔎 ATIVOS PRINCIPAIS\n\n"
 
     for ativo in ATIVOS_PRINCIPAIS:
@@ -137,14 +133,15 @@ def enviar_relatorio_diario():
             variacao = ((close.iloc[-1] - close.iloc[-2]) / close.iloc[-2]) * 100
             status = "🟢 Alta" if variacao > 0 else "🔴 Baixa"
             mensagem += f"{nome}: {variacao:.2f}% ({status})\n"
-        except Exception as e:
+        except:
             mensagem += f"{nome}: erro\n"
 
     bot.send_message(chat_id=CHAT_ID, text=mensagem)
+    relatorio_enviado_hoje = True
 
 
 # =========================
-# ALERTAS A CADA 15 MIN
+# ALERTAS 15 MIN
 # =========================
 
 def verificar_cruzamentos():
@@ -168,14 +165,25 @@ def verificar_cruzamentos():
 
 
 # =========================
-# INICIALIZAÇÃO
+# INICIALIZAÇÃO INTELIGENTE
 # =========================
+
+def checar_envio_automatico():
+    agora = datetime.now(timezone).time()
+    horario_disparo = time(8, 50)
+
+    if agora >= horario_disparo:
+        enviar_relatorio_diario()
+
 
 if __name__ == "__main__":
     print("Bot profissional rodando...")
 
-    # 08:50 Brasil = 11:50 UTC
-    scheduler.add_job(enviar_relatorio_diario, "cron", hour=11, minute=50)
+    # Se reiniciar depois das 08:50, envia automaticamente
+    checar_envio_automatico()
+
+    # Agenda para 08:50 todos os dias
+    scheduler.add_job(enviar_relatorio_diario, "cron", hour=8, minute=50)
 
     # Cruzamentos a cada 15 minutos
     scheduler.add_job(verificar_cruzamentos, "interval", minutes=15)
