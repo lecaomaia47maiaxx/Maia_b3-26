@@ -1,17 +1,33 @@
 import os
 import yfinance as yf
 import pandas as pd
-from telegram import Bot
-from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from flask import Flask
+from telegram import Bot
+from apscheduler.schedulers.background import BackgroundScheduler
+
+# =============================
+# CONFIGURAÇÕES
+# =============================
 
 TOKEN = "8709112968:AAHvkruRIiOuGK07-PI8RBWVgp7jrHqlox8"
 CHAT_ID = "8709112968"
 
 bot = Bot(token=TOKEN)
 
+# =============================
+# FLASK SERVER (necessário para Railway)
+# =============================
+
 app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "BOT ATIVO"
+
+# =============================
+# LISTA DE ATIVOS
+# =============================
 
 TOP10 = [
 "PETR4.SA",
@@ -26,21 +42,9 @@ TOP10 = [
 "MGLU3.SA"
 ]
 
-GLOBAL = {
-"S&P500": "^GSPC",
-"NASDAQ": "^IXIC",
-"DOW": "^DJI",
-"NIKKEI": "^N225",
-"DAX": "^GDAXI"
-}
-
-INDICES = {
-"IBOVESPA": "^BVSP",
-"DOLAR": "BRL=X",
-"MINI INDICE": "WIN=F"
-}
-
-alertas_enviados = {}
+# =============================
+# RSI
+# =============================
 
 def rsi(series, periodo=14):
 
@@ -57,143 +61,105 @@ def rsi(series, periodo=14):
     return 100 - (100/(1+rs))
 
 
+# =============================
+# ANALISE
+# =============================
+
 def analisar(ticker):
 
     try:
 
         df = yf.download(ticker, period="3mo", interval="1d", progress=False)
 
-        close = df["Close"].squeeze()
+        close = df["Close"]
 
         df["MM9"] = close.rolling(9).mean()
         df["MM21"] = close.rolling(21).mean()
-        df["RSI"] = rsi(close)
 
         preco = close.iloc[-1]
+
         mm9 = df["MM9"].iloc[-1]
         mm21 = df["MM21"].iloc[-1]
-        rsi_valor = df["RSI"].iloc[-1]
 
         cruzamento = None
 
         if mm9 > mm21 and df["MM9"].iloc[-2] <= df["MM21"].iloc[-2]:
-            cruzamento = "🚀 CRUZAMENTO DE ALTA"
+            cruzamento = "🚀 Cruzamento de ALTA"
 
         if mm9 < mm21 and df["MM9"].iloc[-2] >= df["MM21"].iloc[-2]:
-            cruzamento = "⚠️ CRUZAMENTO DE BAIXA"
+            cruzamento = "⚠️ Cruzamento de BAIXA"
 
-        return {
-            "preco": preco,
-            "rsi": rsi_valor,
-            "cruzamento": cruzamento
-        }
+        return preco, cruzamento
 
-    except:
+    except Exception as e:
 
-        return None
+        print("Erro ao analisar", ticker, e)
+
+        return None, None
 
 
-def relatorio():
+# =============================
+# ALERTAS
+# =============================
 
-    mensagem = f"📊 RELATÓRIO B3\n{datetime.now().strftime('%d/%m %H:%M')}\n\n"
+def verificar_alertas():
 
-    mensagem += "🌎 MERCADO GLOBAL\n\n"
-
-    for nome,ticker in GLOBAL.items():
-
-        try:
-
-            df = yf.download(ticker, period="5d", interval="1d", progress=False)
-
-            close = df["Close"].squeeze()
-
-            variacao = ((close.iloc[-1]-close.iloc[-2])/close.iloc[-2])*100
-
-            mensagem += f"{nome}: {variacao:.2f}%\n"
-
-        except:
-
-            mensagem += f"{nome}: erro\n"
-
-
-    mensagem += "\n📈 INDICES\n\n"
-
-    for nome,ticker in INDICES.items():
-
-        try:
-
-            df = yf.download(ticker, period="5d", interval="1d", progress=False)
-
-            close = df["Close"].squeeze()
-
-            variacao = ((close.iloc[-1]-close.iloc[-2])/close.iloc[-2])*100
-
-            mensagem += f"{nome}: {variacao:.2f}%\n"
-
-        except:
-
-            mensagem += f"{nome}: erro\n"
-
-
-    mensagem += "\n🏆 TOP10 B3\n\n"
+    print("Executando verificação:", datetime.now())
 
     for ativo in TOP10:
 
-        dados = analisar(ativo)
+        preco, cruzamento = analisar(ativo)
 
-        if dados:
+        if cruzamento:
 
-            mensagem += f"{ativo.replace('.SA','')} RSI {dados['rsi']:.1f}\n"
-
-
-    bot.send_message(chat_id=CHAT_ID,text=mensagem)
-
-
-def alertas():
-
-    for ativo in TOP10:
-
-        dados = analisar(ativo)
-
-        if dados and dados["cruzamento"]:
-
-            if alertas_enviados.get(ativo) != dados["cruzamento"]:
-
-                alertas_enviados[ativo] = dados["cruzamento"]
-
-                alerta = f"""
-
+            msg = f"""
 🚨 ALERTA
 
-{ativo.replace('.SA','')}
+Ativo: {ativo.replace('.SA','')}
+{cruzamento}
 
-{dados['cruzamento']}
-
-Preço {dados['preco']:.2f}
-
+Preço: {preco:.2f}
 """
 
-                bot.send_message(chat_id=CHAT_ID,text=alerta)
+            print(msg)
 
+            bot.send_message(
+                chat_id=CHAT_ID,
+                text=msg
+            )
+
+
+# =============================
+# TESTE DE VIDA
+# =============================
+
+def heartbeat():
+
+    print("BOT ATIVO:", datetime.now())
+
+
+# =============================
+# SCHEDULER
+# =============================
 
 scheduler = BackgroundScheduler()
 
-scheduler.add_job(relatorio,'cron',hour=11,minute=50)
+# verificação de mercado
+scheduler.add_job(verificar_alertas, "interval", minutes=1)
 
-scheduler.add_job(alertas,'interval',minutes=1)
+# log de vida
+scheduler.add_job(heartbeat, "interval", minutes=2)
 
 scheduler.start()
 
 print("Bot rodando...")
 
-@app.route("/")
-def home():
-
-    return "BOT ATIVO"
-
+# =============================
+# START FLASK
+# =============================
 
 if __name__ == "__main__":
 
-    port = int(os.environ.get("PORT",8080))
+    port = int(os.environ.get("PORT", 8080))
 
-    app.run(host="0.0.0.0",port=port)
+    app.run(host="0.0.0.0", port=port)
