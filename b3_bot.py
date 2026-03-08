@@ -9,8 +9,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # CONFIGURAÇÃO TELEGRAM
 # =============================
 
-TOKEN = "8709112968:AAHvkruRIiOuGK07-PI8RBWVgp7jrHqlox8"
-CHAT_ID = "8709112968"
+TOKEN = "8759794487:AAH9Roaz5gxMw7F5lXLJ7aL2DeXWmi5gQU8"
+CHAT_ID = "8759794487"
 
 bot = Bot(token=TOKEN)
 
