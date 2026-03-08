@@ -180,7 +180,7 @@ scheduler = BackgroundScheduler()
 
 scheduler.add_job(relatorio,'cron',hour=11,minute=50)
 
-scheduler.add_job(alertas,'interval',minutes=15)
+scheduler.add_job(alertas,'interval',minutes=1)
 
 scheduler.start()
 
